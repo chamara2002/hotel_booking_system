@@ -68,13 +68,15 @@ def health_check():
 @app.post("/notifications", response_model=NotificationResponse, status_code=201, tags=["Notifications"])
 def send_notification(notif: NotificationCreate):
     global _id_counter
-    if notif.channel in ("EMAIL", "BOTH") and not notif.recipient_email:
+    channel = notif.channel.upper()
+    if channel in ("EMAIL", "BOTH") and not notif.recipient_email:
         raise HTTPException(status_code=400, detail="recipient_email required for EMAIL channel")
-    if notif.channel in ("SMS", "BOTH") and not notif.recipient_phone:
+    if channel in ("SMS", "BOTH") and not notif.recipient_phone:
         raise HTTPException(status_code=400, detail="recipient_phone required for SMS channel")
     record = {
         "notification_id": _id_counter,
         **notif.dict(),
+        "channel": channel,
         "status": "SENT",  
         "sent_at": datetime.now().isoformat()
     }
@@ -95,12 +97,17 @@ def send_from_template(
     tmpl = TEMPLATES.get(template_type.upper())
     if not tmpl:
         raise HTTPException(status_code=400, detail=f"Unknown template. Choose from {list(TEMPLATES.keys())}")
+    channel_upper = channel.upper()
+    if channel_upper in ("EMAIL", "BOTH") and not recipient_email:
+        raise HTTPException(status_code=400, detail="recipient_email required for EMAIL channel")
+    if channel_upper in ("SMS", "BOTH") and not recipient_phone:
+        raise HTTPException(status_code=400, detail="recipient_phone required for SMS channel")
     record = {
         "notification_id": _id_counter,
         "guest_id": guest_id,
         "booking_id": booking_id,
         "notification_type": template_type.upper(),
-        "channel": channel.upper(),
+        "channel": channel_upper,
         "recipient_email": recipient_email,
         "recipient_phone": recipient_phone,
         "subject": tmpl["subject"],

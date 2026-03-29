@@ -45,7 +45,7 @@ class BookingResponse(BaseModel):
 def calculate_nights(check_in: str, check_out: str) -> int:
     fmt = "%Y-%m-%d"
     delta = datetime.strptime(check_out, fmt) - datetime.strptime(check_in, fmt)
-    return max(delta.days, 1)
+    return delta.days
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 @app.get("/", tags=["Health"])
@@ -90,10 +90,13 @@ def update_booking(booking_id: int, update: BookingUpdate):
     for field, value in update.dict(exclude_none=True).items():
         bookings_db[booking_id][field] = value
     if update.check_in_date or update.check_out_date:
-        bookings_db[booking_id]["total_nights"] = calculate_nights(
+        nights = calculate_nights(
             bookings_db[booking_id]["check_in_date"],
             bookings_db[booking_id]["check_out_date"]
         )
+        if nights <= 0:
+            raise HTTPException(status_code=400, detail="Check-out must be after check-in")
+        bookings_db[booking_id]["total_nights"] = nights
     return bookings_db[booking_id]
 
 @app.patch("/bookings/{booking_id}/status", tags=["Bookings"])
