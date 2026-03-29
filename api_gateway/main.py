@@ -7,7 +7,13 @@ from pydantic import BaseModel
 
 from auth import create_access_token, verify_token
 
-app = FastAPI(title="Hotel Booking System - API Gateway", version="1.0.0")
+app = FastAPI(
+    title="Hotel Booking System - API Gateway",
+    description="Central API Gateway that routes requests to all microservices. Provides unified interface for client applications to interact with hotel booking system services.",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
 
 # Downstream services
 SERVICES = {
