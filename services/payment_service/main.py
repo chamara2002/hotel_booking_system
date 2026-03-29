@@ -91,7 +91,11 @@ def refund_payment(payment_id: int, refund: RefundRequest):
     payment = payments_db[payment_id]
     if payment["status"] != "PAID":
         raise HTTPException(status_code=400, detail="Only PAID payments can be refunded")
-    refund_amt = refund.refund_amount if refund.refund_amount else payment["amount"]
+    refund_amt = payment["amount"] if refund.refund_amount is None else round(refund.refund_amount, 2)
+    if refund_amt <= 0:
+        raise HTTPException(status_code=400, detail="Refund amount must be greater than zero")
+    if refund_amt > payment["amount"]:
+        raise HTTPException(status_code=400, detail="Refund amount cannot exceed paid amount")
     payments_db[payment_id]["status"] = "REFUNDED"
     return {
         "message": f"Refund of {refund_amt} {payment['currency']} processed",
@@ -101,8 +105,11 @@ def refund_payment(payment_id: int, refund: RefundRequest):
 
 @app.get("/payments/summary/total", tags=["Payments"])
 def payment_summary():
-    total = sum(p["amount"] for p in payments_db.values() if p["status"] == "PAID")
-    return {"total_revenue": total, "currency": "LKR", "total_transactions": len(payments_db)}
+    paid_payments = [p for p in payments_db.values() if p["status"] == "PAID"]
+    total = sum(p["amount"] for p in paid_payments)
+    currencies = {p["currency"] for p in paid_payments}
+    currency = next(iter(currencies)) if len(currencies) == 1 else "MULTI"
+    return {"total_revenue": total, "currency": currency, "total_transactions": len(paid_payments)}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8004, reload=True)
