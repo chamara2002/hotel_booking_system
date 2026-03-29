@@ -1,8 +1,7 @@
 from typing import Any, Optional
-
 import httpx
 import uvicorn
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -17,11 +16,6 @@ SERVICES = {
     "booking": "http://localhost:8003",
     "notification": "http://localhost:8005",
 }
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
 
 class GuestCreate(BaseModel):
     first_name: str
@@ -109,18 +103,11 @@ async def forward_request(service: str, path: str, method: str, **kwargs) -> Any
 
 @app.post("/login")
 def login(
-    payload: Optional[LoginRequest] = Body(default=None),
-    username: Optional[str] = Query(default=None),
-    password: Optional[str] = Query(default=None),
+    username: str = Query(...),
+    password: str = Query(...),
 ):
-    user = payload.username if payload else username
-    pwd = payload.password if payload else password
-
-    if not user or not pwd:
-        raise HTTPException(status_code=400, detail="Provide username and password")
-
-    if user == "admin" and pwd == "password":
-        token = create_access_token({"sub": user})
+    if username == "admin" and password == "admin":
+        token = create_access_token({"sub": username})
         return {"access_token": token, "token_type": "bearer"}
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
