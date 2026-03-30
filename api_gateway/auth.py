@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta
+import os
 import jwt
 from fastapi import HTTPException, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-SECRET_KEY = "hotel_gateway_secret_123"
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "hotel_gateway_secret_123")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 security = HTTPBearer()

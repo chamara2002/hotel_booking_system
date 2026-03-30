@@ -1,4 +1,5 @@
 from typing import Any, Optional
+import os
 import httpx
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -7,15 +8,30 @@ from pydantic import BaseModel
 
 from auth import create_access_token, verify_token
 
-app = FastAPI(title="Hotel Booking System - API Gateway", version="1.0.0")
+app = FastAPI(
+    title="Hotel Booking System - API Gateway",
+    description="Central API Gateway that routes requests to all microservices. Provides unified interface for client applications to interact with hotel booking system services.",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 
 # Downstream services
 SERVICES = {
     "guest": "http://localhost:8001",
     "room": "http://localhost:8002",
     "booking": "http://localhost:8003",
+    "payment": "http://localhost:8004",
     "notification": "http://localhost:8005",
 }
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 class GuestCreate(BaseModel):
     first_name: str
@@ -74,9 +90,25 @@ class NotificationCreate(BaseModel):
     message: str
 
 
+class PaymentCreate(BaseModel):
+    booking_id: int
+    guest_id: int
+    amount: float
+    currency: Optional[str] = "LKR"
+    payment_method: str
+    room_price_per_night: float
+    total_nights: int
+
+
+class RefundRequest(BaseModel):
+    reason: str
+    refund_amount: Optional[float] = None
+
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    print(f"[REQUEST] {request.method} {request.url}")
+    # Log only the path to avoid leaking sensitive query-string data.
+    print(f"[REQUEST] {request.method} {request.url.path}")
     response = await call_next(request)
     print(f"[RESPONSE] Status {response.status_code}")
     return response
@@ -102,12 +134,9 @@ async def forward_request(service: str, path: str, method: str, **kwargs) -> Any
 
 
 @app.post("/login")
-def login(
-    username: str = Query(...),
-    password: str = Query(...),
-):
-    if username == "admin" and password == "admin":
-        token = create_access_token({"sub": username})
+def login(payload: LoginRequest):
+    if payload.username == ADMIN_USERNAME and payload.password == ADMIN_PASSWORD:
+        token = create_access_token({"sub": payload.username})
         return {"access_token": token, "token_type": "bearer"}
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -254,6 +283,46 @@ async def update_booking_status(
 @app.delete("/gateway/bookings/{booking_id}")
 async def cancel_booking(booking_id: int, _token: dict = Depends(verify_token)):
     return await forward_request("booking", f"/bookings/{booking_id}", "DELETE")
+
+
+# Payment routes (secured)
+@app.get("/gateway/payments")
+async def get_all_payments(_token: dict = Depends(verify_token)):
+    return await forward_request("payment", "/payments", "GET")
+
+
+@app.get("/gateway/payments/{payment_id}")
+async def get_payment(payment_id: int, _token: dict = Depends(verify_token)):
+    return await forward_request("payment", f"/payments/{payment_id}", "GET")
+
+
+@app.get("/gateway/payments/booking/{booking_id}")
+async def get_payments_by_booking(booking_id: int, _token: dict = Depends(verify_token)):
+    return await forward_request("payment", f"/payments/booking/{booking_id}", "GET")
+
+
+@app.post("/gateway/payments")
+async def create_payment(payment: PaymentCreate, _token: dict = Depends(verify_token)):
+    return await forward_request("payment", "/payments", "POST", json=payment.model_dump())
+
+
+@app.post("/gateway/payments/{payment_id}/refund")
+async def refund_payment(
+    payment_id: int,
+    refund: RefundRequest,
+    _token: dict = Depends(verify_token),
+):
+    return await forward_request(
+        "payment",
+        f"/payments/{payment_id}/refund",
+        "POST",
+        json=refund.model_dump(exclude_unset=True),
+    )
+
+
+@app.get("/gateway/payments/summary/total")
+async def get_payment_summary(_token: dict = Depends(verify_token)):
+    return await forward_request("payment", "/payments/summary/total", "GET")
 
 
 # Notification routes (secured)
