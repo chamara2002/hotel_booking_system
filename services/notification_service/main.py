@@ -2,7 +2,13 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
+import os
 import uvicorn
+from pymongo import MongoClient, ReturnDocument
+from pymongo.errors import PyMongoError
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI(
     title="Notification Service",
@@ -12,10 +18,29 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+MONGODB_URI = os.getenv("MONGODB_URI")
+MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "hotel_booking_system")
 
-notifications_db: dict = {}
-_id_counter = 1
+if not MONGODB_URI:
+    raise RuntimeError("MONGODB_URI environment variable is required")
 
+mongo_client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+database = mongo_client[MONGODB_DB_NAME]
+notifications_collection = database["notifications"]
+counters_collection = database["counters"]
+
+def get_next_sequence(counter_name: str) -> int:
+    counter = counters_collection.find_one_and_update(
+        {"_id": counter_name},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return counter["seq"]
+
+def clean_document(document: dict) -> dict:
+    document.pop("_id", None)
+    return document
 
 class NotificationCreate(BaseModel):
     guest_id: int
@@ -40,10 +65,9 @@ class NotificationResponse(BaseModel):
     status: str            
     sent_at: str
 
-
 TEMPLATES = {
     "BOOKING_CONFIRMATION": {
-        "subject": "Your Booking is Confirmed! 🏨",
+        "subject": "Your Booking is Confirmed!",
         "message": "Dear Guest, your hotel booking has been confirmed. We look forward to welcoming you!"
     },
     "CHECK_IN_REMINDER": {
@@ -60,6 +84,15 @@ TEMPLATES = {
     }
 }
 
+@app.on_event("startup")
+def startup_db() -> None:
+    try:
+        mongo_client.admin.command("ping")
+        notifications_collection.create_index("notification_id", unique=True)
+        notifications_collection.create_index("guest_id")
+        notifications_collection.create_index("booking_id")
+    except PyMongoError as ex:
+        raise RuntimeError(f"Failed to initialize MongoDB for Notification Service: {ex}")
 
 @app.get("/", tags=["Health"])
 def health_check():
@@ -67,22 +100,23 @@ def health_check():
 
 @app.post("/notifications", response_model=NotificationResponse, status_code=201, tags=["Notifications"])
 def send_notification(notif: NotificationCreate):
-    global _id_counter
     channel = notif.channel.upper()
     if channel in ("EMAIL", "BOTH") and not notif.recipient_email:
         raise HTTPException(status_code=400, detail="recipient_email required for EMAIL channel")
     if channel in ("SMS", "BOTH") and not notif.recipient_phone:
         raise HTTPException(status_code=400, detail="recipient_phone required for SMS channel")
     record = {
-        "notification_id": _id_counter,
-        **notif.dict(),
+        "notification_id": get_next_sequence("notification_id"),
+        **notif.model_dump(),
         "channel": channel,
         "status": "SENT",  
         "sent_at": datetime.now().isoformat()
     }
-    notifications_db[_id_counter] = record
-    _id_counter += 1
-    return record
+    try:
+        notifications_collection.insert_one(record)
+    except PyMongoError as ex:
+        raise HTTPException(status_code=500, detail=f"Database error: {ex}")
+    return clean_document(record)
 
 @app.post("/notifications/from-template", response_model=NotificationResponse, status_code=201, tags=["Notifications"])
 def send_from_template(
@@ -93,7 +127,6 @@ def send_from_template(
     recipient_email: Optional[str] = None,
     recipient_phone: Optional[str] = None
 ):
-    global _id_counter
     tmpl = TEMPLATES.get(template_type.upper())
     if not tmpl:
         raise HTTPException(status_code=400, detail=f"Unknown template. Choose from {list(TEMPLATES.keys())}")
@@ -103,7 +136,7 @@ def send_from_template(
     if channel_upper in ("SMS", "BOTH") and not recipient_phone:
         raise HTTPException(status_code=400, detail="recipient_phone required for SMS channel")
     record = {
-        "notification_id": _id_counter,
+        "notification_id": get_next_sequence("notification_id"),
         "guest_id": guest_id,
         "booking_id": booking_id,
         "notification_type": template_type.upper(),
@@ -115,29 +148,32 @@ def send_from_template(
         "status": "SENT",
         "sent_at": datetime.now().isoformat()
     }
-    notifications_db[_id_counter] = record
-    _id_counter += 1
-    return record
+    try:
+        notifications_collection.insert_one(record)
+    except PyMongoError as ex:
+        raise HTTPException(status_code=500, detail=f"Database error: {ex}")
+    return clean_document(record)
 
 @app.get("/notifications", response_model=List[NotificationResponse], tags=["Notifications"])
 def list_notifications():
-    return list(notifications_db.values())
+    return list(notifications_collection.find({}, {"_id": 0}).sort("notification_id", 1))
 
 @app.get("/notifications/{notification_id}", response_model=NotificationResponse, tags=["Notifications"])
 def get_notification(notification_id: int):
-    if notification_id not in notifications_db:
+    notification = notifications_collection.find_one({"notification_id": notification_id})
+    if not notification:
         raise HTTPException(status_code=404, detail="Notification not found")
-    return notifications_db[notification_id]
+    return clean_document(notification)
 
 @app.get("/notifications/guest/{guest_id}", response_model=List[NotificationResponse], tags=["Notifications"])
 def get_notifications_by_guest(guest_id: int):
-    return [n for n in notifications_db.values() if n["guest_id"] == guest_id]
+    return list(notifications_collection.find({"guest_id": guest_id}, {"_id": 0}).sort("notification_id", 1))
 
 @app.delete("/notifications/{notification_id}", tags=["Notifications"])
 def delete_notification(notification_id: int):
-    if notification_id not in notifications_db:
+    result = notifications_collection.delete_one({"notification_id": notification_id})
+    if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Notification not found")
-    del notifications_db[notification_id]
     return {"message": f"Notification {notification_id} deleted"}
 
 if __name__ == "__main__":
