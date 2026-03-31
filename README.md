@@ -1,39 +1,76 @@
-# Hotel Booking System
+# Hotel Booking System (Microservices)
 
-This project runs as microservices behind an API gateway and now uses a single MongoDB database with separate collections per service.
+This project contains a FastAPI-based hotel booking platform built using microservices and an API Gateway.
 
-## Database Design
+## Services
 
-- Database name: `hotel_booking_system` (configurable)
-- Collections:
-  - `guests` (Guest Service)
-  - `rooms` (Room Service)
-  - `bookings` (Booking Service)
-  - `payments` (Payment Service)
-  - `notifications` (Notification Service)
-  - `counters` (shared for atomic integer IDs)
+- API Gateway: port 8000
+- Guest Service: port 8001
+- Room Service: port 8002
+- Booking Service: port 8003
+- Payment Service: port 8004
+- Notification Service: port 8005
+
+## Prerequisites
+
+- Python 3.10+
+- MongoDB (local or remote)
 
 ## Environment Setup
 
-1. Copy `.env.example` to `.env`.
-2. Update the values if needed:
+1. Create or edit `.env` in the project root.
+2. Set the required values in `.env`.
 
-```env
-MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.a2vsoth.mongodb.net/?appName=Cluster0
-MONGODB_DB_NAME=hotel_booking_system
-```
+Required environment variables:
 
-## Run (PowerShell)
+- `MONGODB_URI`
+- `MONGODB_DB_NAME`
+- `JWT_SECRET_KEY`
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD`
+
+Optional overrides:
+
+- `GUEST_SERVICE_URL`
+- `ROOM_SERVICE_URL`
+
+## Install Dependencies
+
+Use the project virtual environment and install dependencies per service.
 
 ```powershell
-$env:MONGODB_URI="mongodb+srv://<username>:<password>@cluster0.a2vsoth.mongodb.net/?appName=Cluster0"
-$env:MONGODB_DB_NAME="hotel_booking_system"
-
-# Start services manually in separate terminals or use your start script for bash environments
+# From project root
+.\venv\Scripts\python.exe -m pip install -r api_gateway\requirements.txt
+.\venv\Scripts\python.exe -m pip install -r services\guest_service\requirements.txt
+.\venv\Scripts\python.exe -m pip install -r services\room_service\requirements.txt
+.\venv\Scripts\python.exe -m pip install -r services\booking_service\requirements.txt
+.\venv\Scripts\python.exe -m pip install -r services\payment_service\requirements.txt
+.\venv\Scripts\python.exe -m pip install -r services\notification_service\requirements.txt
 ```
 
-## Notes
+## Run All Services
 
-- Each service creates its own indexes at startup.
-- Credentials should stay in environment variables, not in source code.
-- API contracts are unchanged, so your existing gateway routes continue to work.
+```powershell
+.\start_all.ps1
+```
+
+Stop all services:
+
+```powershell
+.\start_all.ps1 -Stop
+```
+
+## API Documentation
+
+- Gateway Swagger: http://localhost:8000/docs
+- Guest Swagger: http://localhost:8001/docs
+- Room Swagger: http://localhost:8002/docs
+- Booking Swagger: http://localhost:8003/docs
+- Payment Swagger: http://localhost:8004/docs
+- Notification Swagger: http://localhost:8005/docs
+
+## Authentication
+
+1. Call `POST /login` from API Gateway with admin credentials.
+2. Use returned Bearer token for secured gateway routes.
+

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import jwt
 from fastapi import HTTPException, Security
@@ -18,7 +18,7 @@ if not SECRET_KEY:
 
 def create_access_token(data: dict, expires_delta: int = ACCESS_TOKEN_EXPIRE_MINUTES) -> str:
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=expires_delta)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=expires_delta)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
