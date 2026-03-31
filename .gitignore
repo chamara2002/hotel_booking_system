@@ -2,4 +2,6 @@ venv/
 __pycache__/
 *.pyc
 .pids
+.pids.ps1
+.pytest_cache/
 .env

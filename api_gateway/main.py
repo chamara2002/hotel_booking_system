@@ -12,12 +12,24 @@ from auth import create_access_token, verify_token
 
 load_dotenv()
 
+OPENAPI_TAGS = [
+    {"name": "Gateway", "description": "Gateway root and metadata endpoints."},
+    {"name": "Auth", "description": "Authentication endpoints."},
+    {"name": "Health", "description": "System and dependency health endpoints."},
+    {"name": "Guests", "description": "Guest service proxy endpoints."},
+    {"name": "Rooms", "description": "Room service proxy endpoints."},
+    {"name": "Bookings", "description": "Booking service proxy endpoints."},
+    {"name": "Payments", "description": "Payment service proxy endpoints."},
+    {"name": "Notifications", "description": "Notification service proxy endpoints."},
+]
+
 app = FastAPI(
     title="Hotel Booking System - API Gateway",
     description="Central API Gateway that routes requests to all microservices. Provides unified interface for client applications to interact with hotel booking system services.",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    openapi_tags=OPENAPI_TAGS,
 )
 
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
@@ -152,7 +164,7 @@ async def forward_request(service: str, path: str, method: str, **kwargs) -> Any
             raise HTTPException(status_code=503, detail=f"Service unavailable: {str(ex)}")
 
 
-@app.post("/login")
+@app.post("/login", tags=["Auth"])
 def login(payload: LoginRequest):
     if payload.username == ADMIN_USERNAME and payload.password == ADMIN_PASSWORD:
         token = create_access_token({"sub": payload.username})
@@ -160,7 +172,7 @@ def login(payload: LoginRequest):
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
-@app.get("/")
+@app.get("/", tags=["Gateway"])
 def read_root():
     return {
         "message": "API Gateway is running",
@@ -168,7 +180,7 @@ def read_root():
     }
 
 
-@app.get("/health")
+@app.get("/health", tags=["Health"])
 async def check_all_services():
     results = {}
     async with httpx.AsyncClient(timeout=3.0) as client:
@@ -182,33 +194,33 @@ async def check_all_services():
 
 
 # Guest routes (open)
-@app.get("/gateway/guests")
+@app.get("/gateway/guests", tags=["Guests"])
 async def get_all_guests(_token: dict = Depends(verify_token)):
     return await forward_request("guest", "/guests", "GET")
 
 
-@app.get("/gateway/guests/{guest_id}")
+@app.get("/gateway/guests/{guest_id}", tags=["Guests"])
 async def get_guest(guest_id: int, _token: dict = Depends(verify_token)):
     return await forward_request("guest", f"/guests/{guest_id}", "GET")
 
 
-@app.post("/gateway/guests")
+@app.post("/gateway/guests", tags=["Guests"])
 async def create_guest(guest: GuestCreate, _token: dict = Depends(verify_token)):
     return await forward_request("guest", "/guests", "POST", json=guest.model_dump())
 
 
-@app.put("/gateway/guests/{guest_id}")
+@app.put("/gateway/guests/{guest_id}", tags=["Guests"])
 async def update_guest(guest_id: int, guest: GuestUpdate, _token: dict = Depends(verify_token)):
     return await forward_request("guest", f"/guests/{guest_id}", "PUT", json=guest.model_dump(exclude_unset=True))
 
 
-@app.delete("/gateway/guests/{guest_id}")
+@app.delete("/gateway/guests/{guest_id}", tags=["Guests"])
 async def delete_guest(guest_id: int, _token: dict = Depends(verify_token)):
     return await forward_request("guest", f"/guests/{guest_id}", "DELETE")
 
 
 # Room routes (open reads, secured writes)
-@app.get("/gateway/rooms")
+@app.get("/gateway/rooms", tags=["Rooms"])
 async def get_all_rooms(
     available_only: bool = Query(False),
     _token: dict = Depends(verify_token),
@@ -216,22 +228,22 @@ async def get_all_rooms(
     return await forward_request("room", "/rooms", "GET", params={"available_only": available_only})
 
 
-@app.get("/gateway/rooms/{room_id}")
+@app.get("/gateway/rooms/{room_id}", tags=["Rooms"])
 async def get_room(room_id: int, _token: dict = Depends(verify_token)):
     return await forward_request("room", f"/rooms/{room_id}", "GET")
 
 
-@app.post("/gateway/rooms")
+@app.post("/gateway/rooms", tags=["Rooms"])
 async def create_room(room: RoomCreate, _token: dict = Depends(verify_token)):
     return await forward_request("room", "/rooms", "POST", json=room.model_dump())
 
 
-@app.put("/gateway/rooms/{room_id}")
+@app.put("/gateway/rooms/{room_id}", tags=["Rooms"])
 async def update_room(room_id: int, room: RoomUpdate, _token: dict = Depends(verify_token)):
     return await forward_request("room", f"/rooms/{room_id}", "PUT", json=room.model_dump(exclude_unset=True))
 
 
-@app.patch("/gateway/rooms/{room_id}/availability")
+@app.patch("/gateway/rooms/{room_id}/availability", tags=["Rooms"])
 async def set_room_availability(
     room_id: int,
     is_available: bool = Query(...),
@@ -245,33 +257,33 @@ async def set_room_availability(
     )
 
 
-@app.delete("/gateway/rooms/{room_id}")
+@app.delete("/gateway/rooms/{room_id}", tags=["Rooms"])
 async def delete_room(room_id: int, _token: dict = Depends(verify_token)):
     return await forward_request("room", f"/rooms/{room_id}", "DELETE")
 
 
 # Booking routes (secured)
-@app.get("/gateway/bookings")
+@app.get("/gateway/bookings", tags=["Bookings"])
 async def get_all_bookings(_token: dict = Depends(verify_token)):
     return await forward_request("booking", "/bookings", "GET")
 
 
-@app.get("/gateway/bookings/{booking_id}")
+@app.get("/gateway/bookings/{booking_id}", tags=["Bookings"])
 async def get_booking(booking_id: int, _token: dict = Depends(verify_token)):
     return await forward_request("booking", f"/bookings/{booking_id}", "GET")
 
 
-@app.get("/gateway/bookings/guest/{guest_id}")
+@app.get("/gateway/bookings/guest/{guest_id}", tags=["Bookings"])
 async def get_bookings_by_guest(guest_id: int, _token: dict = Depends(verify_token)):
     return await forward_request("booking", f"/bookings/guest/{guest_id}", "GET")
 
 
-@app.post("/gateway/bookings")
+@app.post("/gateway/bookings", tags=["Bookings"])
 async def create_booking(booking: BookingCreate, _token: dict = Depends(verify_token)):
     return await forward_request("booking", "/bookings", "POST", json=booking.model_dump())
 
 
-@app.put("/gateway/bookings/{booking_id}")
+@app.put("/gateway/bookings/{booking_id}", tags=["Bookings"])
 async def update_booking(
     booking_id: int,
     booking: BookingUpdate,
@@ -285,7 +297,7 @@ async def update_booking(
     )
 
 
-@app.patch("/gateway/bookings/{booking_id}/status")
+@app.patch("/gateway/bookings/{booking_id}/status", tags=["Bookings"])
 async def update_booking_status(
     booking_id: int,
     status: str = Query(...),
@@ -299,33 +311,33 @@ async def update_booking_status(
     )
 
 
-@app.delete("/gateway/bookings/{booking_id}")
+@app.delete("/gateway/bookings/{booking_id}", tags=["Bookings"])
 async def cancel_booking(booking_id: int, _token: dict = Depends(verify_token)):
     return await forward_request("booking", f"/bookings/{booking_id}", "DELETE")
 
 
 # Payment routes (secured)
-@app.get("/gateway/payments")
+@app.get("/gateway/payments", tags=["Payments"])
 async def get_all_payments(_token: dict = Depends(verify_token)):
     return await forward_request("payment", "/payments", "GET")
 
 
-@app.get("/gateway/payments/{payment_id}")
+@app.get("/gateway/payments/{payment_id}", tags=["Payments"])
 async def get_payment(payment_id: int, _token: dict = Depends(verify_token)):
     return await forward_request("payment", f"/payments/{payment_id}", "GET")
 
 
-@app.get("/gateway/payments/booking/{booking_id}")
+@app.get("/gateway/payments/booking/{booking_id}", tags=["Payments"])
 async def get_payments_by_booking(booking_id: int, _token: dict = Depends(verify_token)):
     return await forward_request("payment", f"/payments/booking/{booking_id}", "GET")
 
 
-@app.post("/gateway/payments")
+@app.post("/gateway/payments", tags=["Payments"])
 async def create_payment(payment: PaymentCreate, _token: dict = Depends(verify_token)):
     return await forward_request("payment", "/payments", "POST", json=payment.model_dump())
 
 
-@app.post("/gateway/payments/{payment_id}/refund")
+@app.post("/gateway/payments/{payment_id}/refund", tags=["Payments"])
 async def refund_payment(
     payment_id: int,
     refund: RefundRequest,
@@ -339,33 +351,33 @@ async def refund_payment(
     )
 
 
-@app.get("/gateway/payments/summary/total")
+@app.get("/gateway/payments/summary/total", tags=["Payments"])
 async def get_payment_summary(_token: dict = Depends(verify_token)):
     return await forward_request("payment", "/payments/summary/total", "GET")
 
 
 # Notification routes (secured)
-@app.get("/gateway/notifications")
+@app.get("/gateway/notifications", tags=["Notifications"])
 async def get_all_notifications(_token: dict = Depends(verify_token)):
     return await forward_request("notification", "/notifications", "GET")
 
 
-@app.get("/gateway/notifications/{notification_id}")
+@app.get("/gateway/notifications/{notification_id}", tags=["Notifications"])
 async def get_notification(notification_id: int, _token: dict = Depends(verify_token)):
     return await forward_request("notification", f"/notifications/{notification_id}", "GET")
 
 
-@app.get("/gateway/notifications/guest/{guest_id}")
+@app.get("/gateway/notifications/guest/{guest_id}", tags=["Notifications"])
 async def get_notifications_by_guest(guest_id: int, _token: dict = Depends(verify_token)):
     return await forward_request("notification", f"/notifications/guest/{guest_id}", "GET")
 
 
-@app.post("/gateway/notifications")
+@app.post("/gateway/notifications", tags=["Notifications"])
 async def send_notification(notif: NotificationCreate, _token: dict = Depends(verify_token)):
     return await forward_request("notification", "/notifications", "POST", json=notif.model_dump())
 
 
-@app.post("/gateway/notifications/from-template")
+@app.post("/gateway/notifications/from-template", tags=["Notifications"])
 async def send_from_template(
     guest_id: int = Query(...),
     booking_id: int = Query(...),
@@ -388,7 +400,7 @@ async def send_from_template(
     return await forward_request("notification", "/notifications/from-template", "POST", params=params)
 
 
-@app.delete("/gateway/notifications/{notification_id}")
+@app.delete("/gateway/notifications/{notification_id}", tags=["Notifications"])
 async def delete_notification(notification_id: int, _token: dict = Depends(verify_token)):
     return await forward_request("notification", f"/notifications/{notification_id}", "DELETE")
 
