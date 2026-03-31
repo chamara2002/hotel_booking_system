@@ -1,12 +1,16 @@
 from typing import Any, Optional
 import os
+import uuid
 import httpx
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from dotenv import load_dotenv
 
 from auth import create_access_token, verify_token
+
+load_dotenv()
 
 app = FastAPI(
     title="Hotel Booking System - API Gateway",
@@ -16,8 +20,11 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
+if not ADMIN_USERNAME or not ADMIN_PASSWORD:
+    raise RuntimeError("ADMIN_USERNAME and ADMIN_PASSWORD environment variables are required")
 
 # Downstream services
 SERVICES = {
@@ -30,19 +37,22 @@ SERVICES = {
 
 
 class LoginRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
     username: str
     password: str
 
 class GuestCreate(BaseModel):
-    first_name: str
-    last_name: str
-    email: str
-    phone: str
+    model_config = ConfigDict(str_strip_whitespace=True)
+    first_name: str = Field(min_length=1, max_length=80)
+    last_name: str = Field(min_length=1, max_length=80)
+    email: EmailStr
+    phone: str = Field(min_length=7, max_length=20)
     nationality: Optional[str] = "N/A"
-    id_number: str
+    id_number: str = Field(min_length=4, max_length=30)
 
 
 class GuestUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     phone: Optional[str] = None
@@ -50,67 +60,76 @@ class GuestUpdate(BaseModel):
 
 
 class RoomCreate(BaseModel):
-    room_number: str
-    room_type: str
-    floor: int
-    price_per_night: float
-    max_occupancy: int
+    model_config = ConfigDict(str_strip_whitespace=True)
+    room_number: str = Field(min_length=1, max_length=20)
+    room_type: str = Field(min_length=1, max_length=40)
+    floor: int = Field(ge=0, le=500)
+    price_per_night: float = Field(gt=0)
+    max_occupancy: int = Field(ge=1, le=20)
     amenities: Optional[str] = "WiFi, TV, AC"
 
 
 class RoomUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
     price_per_night: Optional[float] = None
     is_available: Optional[bool] = None
     amenities: Optional[str] = None
 
 
 class BookingCreate(BaseModel):
-    guest_id: int
-    room_id: int
-    check_in_date: str
-    check_out_date: str
-    num_guests: int
+    model_config = ConfigDict(str_strip_whitespace=True)
+    guest_id: int = Field(gt=0)
+    room_id: int = Field(gt=0)
+    check_in_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    check_out_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    num_guests: int = Field(ge=1, le=20)
     special_requests: Optional[str] = None
 
 
 class BookingUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
     check_in_date: Optional[str] = None
     check_out_date: Optional[str] = None
     special_requests: Optional[str] = None
 
 
 class NotificationCreate(BaseModel):
-    guest_id: int
-    booking_id: Optional[int] = None
-    notification_type: str
-    channel: str
-    recipient_email: Optional[str] = None
+    model_config = ConfigDict(str_strip_whitespace=True)
+    guest_id: int = Field(gt=0)
+    booking_id: Optional[int] = Field(default=None, gt=0)
+    notification_type: str = Field(min_length=2, max_length=40)
+    channel: str = Field(min_length=3, max_length=10)
+    recipient_email: Optional[EmailStr] = None
     recipient_phone: Optional[str] = None
-    subject: str
-    message: str
+    subject: str = Field(min_length=1, max_length=200)
+    message: str = Field(min_length=1, max_length=2000)
 
 
 class PaymentCreate(BaseModel):
-    booking_id: int
-    guest_id: int
-    amount: float
+    model_config = ConfigDict(str_strip_whitespace=True)
+    booking_id: int = Field(gt=0)
+    guest_id: int = Field(gt=0)
+    amount: float = Field(gt=0)
     currency: Optional[str] = "LKR"
-    payment_method: str
-    room_price_per_night: float
-    total_nights: int
+    payment_method: str = Field(min_length=2, max_length=50)
+    room_price_per_night: float = Field(gt=0)
+    total_nights: int = Field(gt=0, le=365)
 
 
 class RefundRequest(BaseModel):
-    reason: str
+    model_config = ConfigDict(str_strip_whitespace=True)
+    reason: str = Field(min_length=3, max_length=250)
     refund_amount: Optional[float] = None
 
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
     # Log only the path to avoid leaking sensitive query-string data.
-    print(f"[REQUEST] {request.method} {request.url.path}")
+    print(f"[REQUEST] {request_id} {request.method} {request.url.path}")
     response = await call_next(request)
-    print(f"[RESPONSE] Status {response.status_code}")
+    response.headers["x-request-id"] = request_id
+    print(f"[RESPONSE] {request_id} Status {response.status_code}")
     return response
 
 
